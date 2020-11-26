@@ -252,17 +252,21 @@
 
                 var p = d3.selectAll('path');
                 var s = p.selectAll('#' + this.id);
-                console.log(d);
+                //console.log(d);
                 s._parents.forEach(function (b) {
                     if (b.id) {
                         if (b.id === sel) {
                             var pathChoice = b.getBBox();
+                            console.log(window.innerWidth);
+                            console.log(pathChoice.x);
+                            console.log(pathChoice.y);
+                            //console.log(pathChoice.width);
                             var x = pathChoice.x;
                             var y = pathChoice.y;
 
                             div.html("Country: " + d.Country + "<br>" + "Fertility Rate: " + d[fieldColor])
-                                .style("left", (x+250) + "px")
-                                .style("top", (y-10) + "px")
+                                .style("left", ((x) + (window.innerWidth/5)) + "px")
+                                .style("top", (y) + "px")
                                 .style("background-color", "white")
                                 .style("opacity", .8);
                         }
