@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+    body {
+        background-color: #a4b0be;
+        width: 940px;
+        margin: 0 auto;
+        margin-top: 2em;
+    }
+
+    svg {
+        font: 10px sans-serif;
+    }
+
+    div.tooltip {
+        position: absolute;
+        text-align: center;
+        /*width: 100px;*/
+        padding: 4px;
+        font: 10px sans-serif;
+        background: white;
+        border: 0px;
+        border-radius: 8px;
+        pointer-events: none;
+    }
+
+
+    .axis path,
+    .axis line {
+        fill: none;
+        stroke: black;
+        shape-rendering: crispEdges;
+    }
+</style>
+<body>
+<script src="d3.js"></script>
+<script src="topojson.v1.min.js"></script>
+<script>
+
+    //Idea 1: Click country on the map and the scatter plot filter to only show the selected countries
+    //Idea 2: click/hover over a point on the scatter plot and the corresponding country is highlighted
+    //and has a text box appear over it
+
+
+    /**
+     * copied from the following resources:
+     * http://bl.ocks.org/micahstubbs/281d7b7a7e39a9b59cf80f1b8bd41a72
+     * http://bl.ocks.org/msbarry/9911363
+     * http://bl.ocks.org/weiglemc/6185069
+     *
+    **/
+
+    //no margins?
+	const margin = {top: 0, right: 0, bottom: 0, left: 0};
+	const width = 960 - margin.left - margin.right;
+	const height = 1000 - margin.top - margin.bottom;
+
+    const color = d3.scaleThreshold()
+        .domain([2, 3, 4, 5, 6, 7, 8])
+        .range( d3.schemeBlues[7] )
+        .unknown(d3.rgb(255,200,200));   //unknown domain value produces the orange colour
+
+    //Append svg element to the body of the DOM
+	const svg = d3.select('body')
+			.append('svg')
+			.attr('width', width)
+			.attr('height', height);
+
+	//group called map
+    const map = svg
+        .append('g')
+        .attr('class', 'map');
+
+    //group for the scatterplot element
+    const scatterplot = svg
+        .append('g')
+        .attr('class', 'scatterplot')
+        .attr("transform", "translate(100,550)");
+
+    //mercator projection provided by d3
+    const projection = d3.geoMercator()
+			.scale(130)
+			.translate( [width / 2, height / 1.5/2]);
+
+    //create the path for the projection
+	const path = d3.geoPath().projection(projection);
+
+    var div = d3.select("body")
+        .append("div")
+        .attr("class", "tooltip")
+        .style("opacity", 0);
+
+    Promise.all([
+        d3.csv('who.csv'),
+        d3.json('world_countries.json'),
+        d3.tsv('world_population.tsv')
+    ]).then(function(data) {
+		const fertilityById = {};
+        const mapSelection = {};
+
+        let who = data[0];
+        let countries = data[1];
+        let population = data[2];
+
+        let fieldColor = 'Total fertility rate (per woman)';
+        let fieldXAxis = "Urban_population_growth";
+        let fieldYAxis = "Urban_population_pct_of_total";
+
+        //removing 'nulls' for each empty fertility rate value
+        who.forEach(d => {
+            if(d[fieldColor] == '') {
+                d[fieldColor] = undefined;
+            };
+        });
+
+        //places the id of the country into the who dataset
+        population.forEach(d =>
+        {
+            var res = who.find(e =>
+            {
+                return e.Country == d.name;
+            });
+            if(typeof res !== 'undefined') {
+                res.id = d.id;
+            }
+        });
+
+
+
+        //for each element in the who data set, sets fertilityById map to be id and fertility rate
+        who.forEach(d => { fertilityById[d.id] = +d[fieldColor]; });
+        //console.log(fertilityById);
+
+        //adds the the fertility rate to each country as a field called population
+        countries.features.forEach(d => { d.population = fertilityById[d.id] });
+
+        //console.log(countries.features);
+
+        //append paths for all the data in the countries dataset
+        svg.append('g')
+				.attr('class', 'countries')
+				.selectAll('path')
+				.data(countries.features)
+				.enter().append('path')
+                .attr("id", d => { return "COUNTRY-CODE-"+d.id;} )
+				.attr('d', path)
+				.style('fill', d => color(fertilityById[d.id]))
+				.style('stroke', 'black')
+				.style('opacity', 1)
+				.style('stroke-width', 0.3)
+				.on('mouseover',function(d){})
+				.on('mouseout', function(d){})
+                .on('click', function (d){
+
+                    //console.log(mapSelection);
+                    var selectionLength = Object.keys(mapSelection).length+1;
+                    //console.log(selectionLength);
+                    if (selectionLength === 1) {
+                            mapSelection[d.id] = true;
+                            d3.selectAll('path')
+                                .style('opacity', .4);
+                            d3.selectAll('circle')
+                                .style('opacity', 0);
+                            d3.selectAll('#' + this.id)
+                                .style('opacity', 1);
+                    } else if (mapSelection[d.id] && selectionLength === 2) {
+                        delete mapSelection[d.id];
+                        d3.selectAll('path')
+                            .style('opacity', 1);
+                        d3.selectAll('circle')
+                            .style('opacity', 1);
+                    } else if (!mapSelection[d.id] && selectionLength === 2) {
+                        mapSelection[d.id] = true;
+                        d3.selectAll('#' + this.id)
+                            .style('opacity', 1);
+                    } else if (mapSelection[d.id] && selectionLength > 2) {
+                        delete mapSelection[d.id];
+                        d3.selectAll('#' + this.id)
+                            .style('opacity', 0.4);
+                    } else {
+                        mapSelection[d.id] = true;
+                        d3.selectAll('#' + this.id)
+                            .style('opacity', 1);
+                    }
+                });
+
+		svg.append('path')
+				.datum(topojson.mesh(countries.features, (a, b) => a.id !== b.id))
+				.attr('class', 'names')
+				.attr('d', path);
+
+        // setup x
+        var xValue = function(d) { return d[fieldXAxis];}, // data -> value
+            xScale = d3.scaleLinear().range([0, height/2-100]), // value -> display
+            xMap = function(d) { return xScale(xValue(d));}, // data -> display
+            xAxis = d3.axisBottom().scale(xScale);
+
+        // setup y
+        var yValue = function(d) { return d[fieldYAxis];}, // data -> value
+            yScale = d3.scaleLinear().range([height/2-100, 0]), // value -> display
+            yMap = function(d) { return yScale(yValue(d));}, // data -> display
+            yAxis = d3.axisLeft().scale(yScale);
+
+        // don't want dots overlapping axis, so add in buffer to data domain
+        xScale.domain([-2, 8]);
+        yScale.domain([0, 100]);
+
+        // x-axis
+        scatterplot.append("g")
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + (height/2-100) + ")")
+            .call(xAxis)
+            .append("text")
+            .attr("class", "label")
+            .attr("x", xScale(8))
+            .attr("y", -6)
+            .style("text-anchor", "end")
+            .text(fieldXAxis.replace(/_/g, " "));
+
+        // y-axis
+        scatterplot.append("g")
+            .attr("class", "y axis")
+            .call(yAxis)
+            .append("text")
+            .attr("class", "label")
+            .attr("transform", "rotate(-90)")
+            .attr("x", 0)
+            .attr("y", yScale(100))
+            .attr("dy", "1.5em")
+            .style("text-anchor", "end")
+            .text(fieldYAxis.replace(/_/g, " "));
+
+        // draw dots
+        scatterplot.selectAll(".dot")
+            .data(who)
+            .enter().append("circle")
+            .attr("id", d => { return "COUNTRY-CODE-"+d.id; } )
+            .attr("r", 3.5)
+            .attr("cx", xMap)
+            .attr("cy", yMap)
+            .style("fill", function(d) { return color(d[fieldColor]);})
+            .on("mouseover", function(d) {
+
+                d3.selectAll('circle')
+                .style('opacity', 0.3);
+                d3.selectAll('path')
+                .style('opacity', 0.3);
+                d3.selectAll('#' + this.id)
+                .style('opacity', 1);
+
+                var sel = this.id;
+
+                var p = d3.selectAll('path');
+                var s = p.selectAll('#' + this.id);
+                console.log(d);
+                s._parents.forEach(function (b) {
+                    if (b.id) {
+                        if (b.id === sel) {
+                            var pathChoice = b.getBBox();
+                            var x = pathChoice.x;
+                            var y = pathChoice.y;
+
+                            div.html("Country: " + d.Country + "<br>" + "Fertility Rate: " + d[fieldColor])
+                                .style("left", (x+250) + "px")
+                                .style("top", (y-10) + "px")
+                                .style("background-color", "white")
+                                .style("opacity", .8);
+                        }
+                    }
+
+                });
+
+            })
+            .on("mouseout", function(d) {
+                d3.selectAll('circle')
+                    .style('opacity', 1);
+                d3.selectAll('path')
+                    .style('opacity', 1);
+                div.style("opacity", .0);
+
+            });
+
+
+
+        // draw legend
+        var legend = scatterplot.append("g").attr("class", "legend-group").selectAll(".legend")
+            .data(color.domain())
+            .enter().append("g")
+            .attr("class", "legend")
+            .attr("transform", function(d, i) { return "translate(-100," + (i+1) * 20 + ")"; });
+
+        // draw legend colored rectangles
+        legend.append("rect")
+            .attr("x", width/2 + 4)
+            .attr("width", 18)
+            .attr("height", 18)
+            .style("fill", (d,i)=> color(d-0.0001));
+
+        // draw legend text
+        legend.append("text")
+            .attr("x", width/2 - 3)
+            .attr("y", 9)
+            .attr("dy", ".35em")
+            .style("text-anchor", "end")
+            .text(function(d) { return "< "+d;});
+
+        scatterplot.select("g.legend-group")
+            .append("g")
+            .attr("class", "legend")
+            .attr("transform", "translate(-100,0)")
+            .append("text")
+            .attr("x", width/2+22)
+            .attr("y", 0)
+            .attr("dy", "1.5em")
+            .style("text-anchor", "end")
+            .text(fieldColor);
+    });
+
+</script>
+</body>
+</html>
